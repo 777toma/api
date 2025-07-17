@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <limits.h>
+#include <math.h>
 
 // ============================================================================
 // 1. DATA STRUCTURES & FORWARD DECLARATIONS
@@ -297,7 +298,7 @@ void do_init(uint32_t cols, uint32_t rows) {
 }
 
 void do_change_cost(uint16_t x, uint16_t y, int v, int radius) {
-    if (!is_valid(x, y) || radius <= 0) {
+    if (!is_valid(x, y) || radius <= 0 || ((v < -10) || (v > 10))) {
         printf("KO\n");
         return;
     }
@@ -348,7 +349,7 @@ void do_toggle_air_route(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
         for (int i = 0; i < source_hex->num_air_routes; ++i) {
             cost_sum += source_hex->air_routes[i].cost;
         }
-        uint8_t new_cost = (uint8_t)(cost_sum / (source_hex->num_air_routes + 1));
+        uint8_t new_cost = (uint8_t)floor(cost_sum / (source_hex->num_air_routes +1));
         source_hex->air_routes[source_hex->num_air_routes].dest_x = x2;
         source_hex->air_routes[source_hex->num_air_routes].dest_y = y2;
         source_hex->air_routes[source_hex->num_air_routes].cost = (uint8_t)clamp(new_cost, 0, 100);
@@ -359,6 +360,7 @@ void do_toggle_air_route(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
 
 void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
     if (!is_valid(xp, yp) || !is_valid(xd, yd)) {
+        printf("DEBUG: Invalid coordinate ");
         printf("-1\n");
         return;
     }
@@ -369,7 +371,8 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
     int64_t* cached_distances = cache_get(xp, yp);
     if (cached_distances) {
         int64_t cost = cached_distances[xd * map_rows + yd];
-        printf("%lld\n", cost == LLONG_MAX ? -1 : cost);
+        printf("DEBUG: Cached distance ");
+        printf("%ld\n", cost == LLONG_MAX ? -1 : cost);
         return;
     }
 
@@ -405,8 +408,8 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
                     }
                 }
             }
-        }
-        for (int i = 0; i < u_hex->num_air_routes; i++) {
+
+            for (int i = 0; i < u_hex->num_air_routes; i++) {
             AirRoute* route = &u_hex->air_routes[i];
             if (route->cost > 0) {
                 int64_t new_cost = cost_so_far + route->cost;
@@ -416,11 +419,13 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
                 }
             }
         }
+        }
+
     }
     pq_destroy(pq);
 
     int64_t final_cost = distances[xd * map_rows + yd];
-    printf("%lld\n", final_cost == LLONG_MAX ? -1 : final_cost);
+    printf("%ld\n", final_cost == LLONG_MAX ? -1 : final_cost);
     cache_put(xp, yp, distances);
 }
 
@@ -444,19 +449,19 @@ int main() {
     while (scanf("%s", command) != EOF) {
         if (strcmp(command, "init") == 0) {
             uint32_t cols, rows;
-            scanf("%u %u", &cols, &rows);
+            (void)scanf("%u %u", &cols, &rows);
             do_init(cols, rows);
         } else if (strcmp(command, "change_cost") == 0) {
             uint16_t x, y; int v, r;
-            scanf("%hu %hu %d %d", &x, &y, &v, &r);
+            (void)scanf("%hu %hu %d %d", &x, &y, &v, &r);
             do_change_cost(x, y, v, r);
         } else if (strcmp(command, "toggle_air_route") == 0) {
             uint16_t x1, y1, x2, y2;
-            scanf("%hu %hu %hu %hu", &x1, &y1, &x2, &y2);
+            (void)scanf("%hu %hu %hu %hu", &x1, &y1, &x2, &y2);
             do_toggle_air_route(x1, y1, x2, y2);
         } else if (strcmp(command, "travel_cost") == 0) {
             uint16_t xp, yp, xd, yd;
-            scanf("%hu %hu %hu %hu", &xp, &yp, &xd, &yd);
+            (void)scanf("%hu %hu %hu %hu", &xp, &yp, &xd, &yd);
             do_travel_cost(xp, yp, xd, yd);
         }
     }
