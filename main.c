@@ -265,8 +265,9 @@ static bool is_valid(uint16_t x, uint16_t y) {
 }
 
 static void offset_to_cube(uint16_t col, uint16_t row, int* q, int* r, int* s) {
-    *q = col;
-    *r = row - (col + (col & 1)) / 2;
+    // Formula corretta per la conversione da coordinate ODD-R a cubiche
+    *q = col - (row - (row & 1)) / 2;
+    *r = row;
     *s = -(*q) - (*r);
 }
 
@@ -307,7 +308,7 @@ void do_change_cost(uint16_t x, uint16_t y, int v, int radius) {
         for (uint16_t ye = 0; ye < map_rows; ++ye) {
             int dist = dist_esagoni(xe, ye, x, y);
             if (dist < radius) {
-                long long cost_change = ((long long)v * (radius - dist)) / radius;
+                long long cost_change = ((long long)v * floor((radius - dist)) / radius);
                 int64_t new_cost = map[xe][ye].cost + cost_change;
                 map[xe][ye].cost = (uint8_t)clamp(new_cost, 0, 100);
                 for (int i = 0; i < map[xe][ye].num_air_routes; ++i) {
@@ -360,7 +361,7 @@ void do_toggle_air_route(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
 
 void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
     if (!is_valid(xp, yp) || !is_valid(xd, yd)) {
-        printf("DEBUG: Invalid coordinate ");
+        //printf("DEBUG: Invalid coordinate ");
         printf("-1\n");
         return;
     }
@@ -371,7 +372,7 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
     int64_t* cached_distances = cache_get(xp, yp);
     if (cached_distances) {
         int64_t cost = cached_distances[xd * map_rows + yd];
-        printf("DEBUG: Cached distance ");
+        //printf("DEBUG: Cached distance ");
         printf("%ld\n", cost == LLONG_MAX ? -1 : cost);
         return;
     }
@@ -392,14 +393,29 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
         int64_t cost_so_far = distances[ux * map_rows + uy];
 
         if (ux == xd && uy == yd) break;
-        if (current.priority > cost_so_far + dist_esagoni(ux, uy, xd, yd)) continue;
+        //if (current.priority > cost_so_far + dist_esagoni(ux, uy, xd, yd)) continue;
 
         Hexagon* u_hex = &map[ux][uy];
         if (u_hex->cost > 0) {
-            int dx[] = {0, 1, 1, 0, -1, -1}, dy_even[] = {1, 0, -1, -1, -1, 0}, dy_odd[] = {1, 1, 0, -1, 0, 1};
-            int* dy = (ux % 2 == 0) ? dy_even : dy_odd;
+            // Vettori di direzione corretti e standard per una griglia "odd-r"
+            // La struttura è: [direzione][riga_pari_o_dispari][asse_x_o_y]
+            int directions[6][2][2] = {
+                {{1,  0}, {1, -1}},  // Destra
+                {{1,  1}, {1,  0}},  // Basso-Destra
+                {{0,  1}, {0,  1}},  // Basso
+                {{-1, 1}, {-1, 0}},  // Basso-Sinistra
+                {{-1, 0}, {-1, -1}}, // Sinistra
+                {{0, -1}, {0, -1}}   // Alto
+            };
+
             for (int i = 0; i < 6; i++) {
-                uint16_t vx = ux + dx[i], vy = uy + dy[i];
+                // Sceglie l'offset corretto in base alla parità della RIGA (uy)
+                int offset_col = directions[i][uy % 2][0];
+                int offset_row = directions[i][uy % 2][1];
+
+                uint16_t vx = ux + offset_col;
+                uint16_t vy = uy + offset_row;
+
                 if (is_valid(vx, vy)) {
                     int64_t new_cost = cost_so_far + u_hex->cost;
                     if (new_cost < distances[vx * map_rows + vy]) {
@@ -409,18 +425,19 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
                 }
             }
 
+            // Il ciclo delle rotte aeree deve essere DENTRO l'if (u_hex->cost > 0)
             for (int i = 0; i < u_hex->num_air_routes; i++) {
-            AirRoute* route = &u_hex->air_routes[i];
-            if (route->cost > 0) {
-                int64_t new_cost = cost_so_far + route->cost;
-                if (new_cost < distances[route->dest_x * map_rows + route->dest_y]) {
-                    distances[route->dest_x * map_rows + route->dest_y] = new_cost;
-                    pq_push(pq, (PQNode){new_cost + dist_esagoni(route->dest_x, route->dest_y, xd, yd), route->dest_x, route->dest_y});
+                AirRoute* route = &u_hex->air_routes[i];
+                if (route->cost > 0) { // Se vuoi ancora usare il costo della rotta come condizione
+                    // Il costo è la somma del costo di partenza e di quello di arrivo
+                    int64_t new_cost = cost_so_far + u_hex->cost;
+                    if (new_cost < distances[route->dest_x * map_rows + route->dest_y]) {
+                        distances[route->dest_x * map_rows + route->dest_y] = new_cost;
+                        pq_push(pq, (PQNode){new_cost + dist_esagoni(route->dest_x, route->dest_y, xd, yd), route->dest_x, route->dest_y});
+                    }
                 }
             }
         }
-        }
-
     }
     pq_destroy(pq);
 
