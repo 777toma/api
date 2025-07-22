@@ -308,14 +308,14 @@ void do_change_cost(uint16_t x, uint16_t y, int v, int radius) {
         for (uint16_t ye = 0; ye < map_rows; ++ye) {
             int dist = dist_esagoni(xe, ye, x, y);
             if (dist < radius) {
-                long long cost_change = floor((double)v * (double)(radius - dist) / (double)radius);
-                int64_t new_cost = map[xe][ye].cost + cost_change;
+                double cost_change = floor((double)v * (double)(radius - dist) / (double)radius);
+                int64_t new_cost = map[xe][ye].cost + (int64_t)floor(cost_change);
                 map[xe][ye].cost = (uint8_t)clamp(new_cost, 0, 100);
 
-                if (cost_change != 0) {
-                    fprintf(stderr, "DEBUG: change_cost ha modificato (%u, %u). Vecchio costo: %lld, Nuovo costo: %u\n",
-                           xe, ye, (long long)map[xe][ye].cost - cost_change, map[xe][ye].cost);
-                }
+                // if (cost_change != 0) {
+                //     fprintf(stderr, "DEBUG: change_cost ha modificato (%u, %u). Vecchio costo: %lld, Nuovo costo: %u\n",
+                //            xe, ye, (long long)map[xe][ye].cost - cost_change, map[xe][ye].cost);
+                // }
 
                 for (int i = 0; i < map[xe][ye].num_air_routes; ++i) {
                     int64_t new_air_cost = map[xe][ye].air_routes[i].cost + cost_change;
@@ -352,7 +352,7 @@ void do_toggle_air_route(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
             printf("KO\n");
             return;
         }
-        long long cost_sum = source_hex->cost;
+        double cost_sum = (double)source_hex->cost;
         for (int i = 0; i < source_hex->num_air_routes; ++i) {
             cost_sum += source_hex->air_routes[i].cost;
         }
@@ -461,7 +461,7 @@ typedef struct {
 // Assicurati che le altre tue strutture (Hexagon, PQNode, etc.) e funzioni
 // (dist_esagoni, pq_create, etc.) siano definite prima di questa funzione.
 
-void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
+/*void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
     if (!is_valid(xp, yp) || !is_valid(xd, yd)) {
         printf("-1\n");
         return;
@@ -489,6 +489,12 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
     for (size_t i = 0; i < map_size; ++i) {
         distances[i] = LLONG_MAX;
     }
+
+    //Soluzione proposta per correggere il risultato-1 ottenuto in empty.txt
+    // int costo_iniziale = map[yp][xp].cost;
+    // distances[xp * map_rows + yp] = costo_iniziale;
+
+    //Default
     distances[xp * map_rows + yp] = 0;
 
     PriorityQueue* pq = pq_create(128);
@@ -499,7 +505,9 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
         uint16_t ux = current.x, uy = current.y;
         int64_t cost_so_far = distances[ux * map_rows + uy];
 
-        if (ux == xd && uy == yd) break;
+        //ERRORE in EDGE CASES dovuto a questo
+        //if (ux == xd && uy == yd) break;
+
         // La riga seguente può essere commentata se si sospetta un'euristica inconsistente
         if (current.priority > cost_so_far + dist_esagoni(ux, uy, xd, yd)) continue;
 
@@ -551,6 +559,7 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
 
     int64_t final_cost = distances[xd * map_rows + yd];
 
+    //DEBUG PRINTF
     // ===== INIZIO MODIFICA: Ricostruisci e stampa il percorso se trovato =====
     if (final_cost != LLONG_MAX) {
         fprintf(stderr, "DEBUG: Percorso trovato con costo totale: %ld\n", final_cost);
@@ -588,18 +597,115 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
     } else {
          fprintf(stderr, "DEBUG: Nessun percorso trovato.\n");
     }
-    // ======================== FINE MODIFICA ========================
+    //======================== FINE MODIFICA ========================
 
     printf("%ld\n", final_cost == LLONG_MAX ? -1 : final_cost);
 
-    // Non dimenticare di liberare la memoria extra
-    //free(distances);
-    cache_put(xp, yp, distances); //QUESTO ROMPE IL CALCOLO: quando utilizzo questo devo togliere free(distances)
+    cache_put(xp, yp, distances);
+
+    //Utili alla stampa di DEBUG
     free(parent);
     free(move_type);
+}*/
 
-    // La cache non viene usata in questa versione di debug per semplicità,
-    // ma nella versione finale dovresti gestire cache_put(xp, yp, distances);
+void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
+    if (!is_valid(xp, yp) || !is_valid(xd, yd)) {
+        printf("-1\n");
+        return;
+    }
+    if (xp == xd && yp == yd) {
+        printf("0\n");
+        return;
+    }
+
+    int64_t* cached_distances = cache_get(xp, yp);
+    if (cached_distances) {
+        int64_t cost = cached_distances[xd * map_rows + yd];
+        printf("%ld\n", cost == LLONG_MAX ? -1 : cost);
+        return;
+    }
+
+    size_t map_size = map_cols * map_rows;
+    int64_t* distances = (int64_t*)malloc(map_size * sizeof(int64_t));
+
+    for (size_t i = 0; i < map_size; ++i) {
+        distances[i] = LLONG_MAX;
+    }
+    distances[xp * map_rows + yp] = 0;
+
+    PriorityQueue* pq = pq_create(128);
+    pq_push(pq, (PQNode){0, xp, yp}); // Usa 0 come priorità iniziale invece dell'euristica
+
+    while (!pq_is_empty(pq)) {
+        PQNode current = pq_pop(pq);
+        uint16_t ux = current.x, uy = current.y;
+        int64_t cost_so_far = distances[ux * map_rows + uy];
+
+        if (ux == xd && uy == yd) break;
+
+        // Rimuovi questo controllo che può causare problemi con l'euristica
+        // if (current.priority > cost_so_far + dist_esagoni(ux, uy, xd, yd)) continue;
+
+        Hexagon* u_hex = &map[ux][uy];
+        if (u_hex->cost > 0) {
+            // CORREZIONE 1: Direzioni corrette per griglia odd-r
+            // [direzione][parità_riga][x_o_y]
+            int directions[6][2][2] = {
+                {{1, 0}, {1, 0}},   // Est
+                {{0, 1}, {1, 1}},   // Sud-Est
+                {{-1, 1}, {0, 1}},  // Sud-Ovest
+                {{-1, 0}, {-1, 0}}, // Ovest
+                {{-1, -1}, {0, -1}}, // Nord-Ovest
+                {{0, -1}, {1, -1}}   // Nord-Est
+            };
+
+            for (int i = 0; i < 6; i++) {
+                int offset_col = directions[i][uy % 2][0];
+                int offset_row = directions[i][uy % 2][1];
+
+                int new_x = (int)ux + offset_col;
+                int new_y = (int)uy + offset_row;
+
+                // Controlla bounds con casting sicuro
+                if (new_x >= 0 && new_y >= 0 && new_x < (int)map_cols && new_y < (int)map_rows) {
+                    uint16_t vx = (uint16_t)new_x;
+                    uint16_t vy = (uint16_t)new_y;
+
+                    Hexagon* v_hex = &map[vx][vy];
+                    if (v_hex->cost > 0) { // Controlla che la destinazione sia attraversabile
+                        int64_t new_cost = cost_so_far + u_hex->cost;
+                        if (new_cost < distances[vx * map_rows + vy]) {
+                            distances[vx * map_rows + vy] = new_cost;
+                            pq_push(pq, (PQNode){new_cost + dist_esagoni(vx, vy, xd, yd), vx, vy});
+                        }
+                    }
+                }
+            }
+
+            // CORREZIONE 2: Costo delle rotte aeree corretto
+            for (int i = 0; i < u_hex->num_air_routes; i++) {
+                AirRoute* route = &u_hex->air_routes[i];
+                Hexagon* dest_hex = &map[route->dest_x][route->dest_y];
+
+                // Il costo totale è: costo_partenza + costo_rotta + costo_destinazione
+                // Ma dalla logica sembra che il costo della rotta includa già tutto
+                // Prova prima con solo il costo della rotta:
+                int64_t new_cost = cost_so_far + route->cost;
+
+                if (new_cost < distances[route->dest_x * map_rows + route->dest_y]) {
+                    distances[route->dest_x * map_rows + route->dest_y] = new_cost;
+                    pq_push(pq, (PQNode){new_cost + dist_esagoni(route->dest_x, route->dest_y, xd, yd),
+                                        route->dest_x, route->dest_y});
+                }
+            }
+        }
+    }
+
+    pq_destroy(pq);
+
+    int64_t final_cost = distances[xd * map_rows + yd];
+    printf("%ld\n", final_cost == LLONG_MAX ? -1 : final_cost);
+    cache_put(xp, yp, distances);
 }
 
 void cleanup_resources() {
