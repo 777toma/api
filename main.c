@@ -200,7 +200,7 @@ static void attach_to_head(CacheEntry* entry) {
     if (!tail) tail = head;
 }
 
-static int64_t* cache_get(uint16_t sx, uint16_t sy) {
+/*static int64_t* cache_get(uint16_t sx, uint16_t sy) {
     if (cache_capacity == 0) return NULL;
     unsigned int h = hash(sx, sy);
     CacheEntry* entry = hash_table[h];
@@ -213,9 +213,10 @@ static int64_t* cache_get(uint16_t sx, uint16_t sy) {
         entry = entry->h_next;
     }
     return NULL;
-}
+}*/
 
 static void cache_put(uint16_t sx, uint16_t sy, int64_t* distances) {
+    //ENTRO solamente se CACHE_GET in travel_cost è DISABILITATO, perchè?
     if (cache_capacity == 0) {
         free(distances);
         return;
@@ -254,16 +255,19 @@ static void cache_put(uint16_t sx, uint16_t sy, int64_t* distances) {
 // 4. MOVHEX CORE LOGIC AND COMMAND HANDLERS
 // ============================================================================
 
+//COST CLAMP
 static int64_t clamp(int64_t value, int64_t min, int64_t max) {
     if (value < min) return min;
     if (value > max) return max;
     return value;
 }
 
+//HEXAGON VALIDATION CHECKER
 static bool is_valid(uint16_t x, uint16_t y) {
     return x < map_cols && y < map_rows;
 }
 
+//TO CUBE CONVERTER
 static void offset_to_cube(uint16_t col, uint16_t row, int* q, int* r, int* s) {
     // Formula corretta per la conversione da coordinate ODD-R a cubiche
     *q = col - (row - (row & 1)) / 2;
@@ -271,6 +275,7 @@ static void offset_to_cube(uint16_t col, uint16_t row, int* q, int* r, int* s) {
     *s = -(*q) - (*r);
 }
 
+//DISTANCE CALCULATOR
 static int dist_esagoni(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
     int q1, r1, s1, q2, r2, s2;
     offset_to_cube(x1, y1, &q1, &r1, &s1);
@@ -278,6 +283,7 @@ static int dist_esagoni(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
     return (abs(q1 - q2) + abs(r1 - r2) + abs(s1 - s2)) / 2;
 }
 
+//INIT function
 void do_init(uint32_t cols, uint32_t rows) {
     cleanup_resources();
     map_cols = cols;
@@ -298,6 +304,7 @@ void do_init(uint32_t cols, uint32_t rows) {
     printf("OK\n");
 }
 
+//CHANGE COST function
 void do_change_cost(uint16_t x, uint16_t y, int v, int radius) {
     if (!is_valid(x, y) || radius <= 0 || ((v < -10) || (v > 10))) {
         printf("KO\n");
@@ -312,11 +319,6 @@ void do_change_cost(uint16_t x, uint16_t y, int v, int radius) {
                 int64_t new_cost = map[xe][ye].cost + (int64_t)floor(cost_change);
                 map[xe][ye].cost = (uint8_t)clamp(new_cost, 0, 100);
 
-                // if (cost_change != 0) {
-                //     fprintf(stderr, "DEBUG: change_cost ha modificato (%u, %u). Vecchio costo: %lld, Nuovo costo: %u\n",
-                //            xe, ye, (long long)map[xe][ye].cost - cost_change, map[xe][ye].cost);
-                // }
-
                 for (int i = 0; i < map[xe][ye].num_air_routes; ++i) {
                     int64_t new_air_cost = map[xe][ye].air_routes[i].cost + cost_change;
                     map[xe][ye].air_routes[i].cost = (uint8_t)clamp(new_air_cost, 0, 100);
@@ -327,6 +329,7 @@ void do_change_cost(uint16_t x, uint16_t y, int v, int radius) {
     printf("OK\n");
 }
 
+//TOGGLE AIR ROUTE function
 void do_toggle_air_route(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
     if (!is_valid(x1, y1) || !is_valid(x2, y2)) {
         printf("KO\n");
@@ -365,110 +368,8 @@ void do_toggle_air_route(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
     }
 }
 
-// void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
-//     if (!is_valid(xp, yp) || !is_valid(xd, yd)) {
-//         //printf("DEBUG: Invalid coordinate ");
-//         printf("-1\n");
-//         return;
-//     }
-//     if (xp == xd && yp == yd) {
-//         printf("0\n");
-//         return;
-//     }
-//     int64_t* cached_distances = cache_get(xp, yp);
-//     if (cached_distances) {
-//         int64_t cost = cached_distances[xd * map_rows + yd];
-//         //printf("DEBUG: Cached distance ");
-//         printf("%ld\n", cost == LLONG_MAX ? -1 : cost);
-//         return;
-//     }
-//
-//     size_t map_size = map_cols * map_rows;
-//     int64_t* distances = (int64_t*)malloc(map_size * sizeof(int64_t));
-//     for (size_t i = 0; i < map_size; ++i) {
-//         distances[i] = LLONG_MAX;
-//     }
-//     distances[xp * map_rows + yp] = 0;
-//
-//     PriorityQueue* pq = pq_create(128);
-//     pq_push(pq, (PQNode){dist_esagoni(xp, yp, xd, yd), xp, yp});
-//
-//     while (!pq_is_empty(pq)) {
-//         PQNode current = pq_pop(pq);
-//         uint16_t ux = current.x, uy = current.y;
-//         int64_t cost_so_far = distances[ux * map_rows + uy];
-//
-//         if (ux == xd && uy == yd) break;
-//         //if (current.priority > cost_so_far + dist_esagoni(ux, uy, xd, yd)) continue;
-//
-//         Hexagon* u_hex = &map[ux][uy];
-//         if (u_hex->cost > 0) {
-//             // Vettori di direzione corretti e standard per una griglia "odd-r"
-//             // La struttura è: [direzione][riga_pari_o_dispari][asse_x_o_y]
-//             int directions[6][2][2] = {
-//                 {{1,  0}, {1, -1}},  // Destra
-//                 {{1,  1}, {1,  0}},  // Basso-Destra
-//                 {{0,  1}, {0,  1}},  // Basso
-//                 {{-1, 1}, {-1, 0}},  // Basso-Sinistra
-//                 {{-1, 0}, {-1, -1}}, // Sinistra
-//                 {{0, -1}, {0, -1}}   // Alto
-//             };
-//
-//             for (int i = 0; i < 6; i++) {
-//                 // Sceglie l'offset corretto in base alla parità della RIGA (uy)
-//                 int offset_col = directions[i][uy % 2][0];
-//                 int offset_row = directions[i][uy % 2][1];
-//
-//                 uint16_t vx = ux + offset_col;
-//                 uint16_t vy = uy + offset_row;
-//
-//                 if (is_valid(vx, vy)) {
-//                     int64_t new_cost = cost_so_far + u_hex->cost;
-//                     if (new_cost < distances[vx * map_rows + vy]) {
-//                         distances[vx * map_rows + vy] = new_cost;
-//                         pq_push(pq, (PQNode){new_cost + dist_esagoni(vx, vy, xd, yd), vx, vy});
-//                     }
-//                 }
-//             }
-//
-//             // Il ciclo delle rotte aeree deve essere DENTRO l'if (u_hex->cost > 0)
-//             for (int i = 0; i < u_hex->num_air_routes; i++) {
-//                 AirRoute* route = &u_hex->air_routes[i];
-//                 if (route->cost > 0) { // Se vuoi ancora usare il costo della rotta come condizione
-//                     // Il costo è la somma del costo di partenza e di quello di arrivo
-//                     int64_t new_cost = cost_so_far + u_hex->cost;
-//                     if (new_cost < distances[route->dest_x * map_rows + route->dest_y]) {
-//                         distances[route->dest_x * map_rows + route->dest_y] = new_cost;
-//                         pq_push(pq, (PQNode){new_cost + dist_esagoni(route->dest_x, route->dest_y, xd, yd), route->dest_x, route->dest_y});
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     pq_destroy(pq);
-//
-//     int64_t final_cost = distances[xd * map_rows + yd];
-//     printf("%ld\n", final_cost == LLONG_MAX ? -1 : final_cost);
-//     cache_put(xp, yp, distances);
-// }
-
-// Definisci una struttura per le coordinate, per rendere il codice più pulito
-typedef struct {
-    uint16_t x;
-    uint16_t y;
-} Point;
-
-// Assicurati che le altre tue strutture (Hexagon, PQNode, etc.) e funzioni
-// (dist_esagoni, pq_create, etc.) siano definite prima di questa funzione.
-
-// Struttura per tracciare tutte le informazioni del percorso
-typedef struct {
-    Point parent;
-    char move_type;           // 'T' per Terra, 'A' per Aerea
-    int64_t move_cost;        // Costo della singola mossa
-    int direction_index;      // Indice 0-5 per la direzione, -1 per mosse aeree
-} PathInfo;
-
+//TRAVEL COST function w/ DIJKSTRA implementation (NO HEURISTIC)
+//Fixed FLATTOP map
 void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
     if (!is_valid(xp, yp) || !is_valid(xd, yd)) {
         printf("-1\n");
@@ -479,34 +380,24 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
         return;
     }
 
-    //CACHE LOGIC
-    // La logica della cache viene temporaneamente bypassata per il debug,
-    // puoi ripristinarla in seguito.
-    int64_t* cached_distances = cache_get(xp, yp);
+    //CACHE LOGIC, se attiva: edge_cases test non funziona
+    /*int64_t* cached_distances = cache_get(xp, yp);
     if (cached_distances) {
         printf("%ld\n", cached_distances[xd * map_rows + yd] == LLONG_MAX ? -1 : cached_distances[xd * map_rows + yd]);
         return;
     }
+    */
 
 
     size_t map_size = map_cols * map_rows;
     int64_t* distances = (int64_t*)malloc(map_size * sizeof(int64_t));
-    PathInfo* path_info = (PathInfo*)malloc(map_size * sizeof(PathInfo));
-
     for (size_t i = 0; i < map_size; ++i) {
         distances[i] = LLONG_MAX;
-        path_info[i].parent = (Point){UINT16_MAX, UINT16_MAX};
     }
     distances[xp * map_rows + yp] = 0;
 
     PriorityQueue* pq = pq_create(128);
     pq_push(pq, (PQNode){0, xp, yp});
-
-    // --- CORREZIONE: Nomi delle direzioni per griglia "Flat-Top" ---
-    /*const char* direction_names[6] = {
-        "a Destra", "in Basso a Destra", "in Basso a Sinistra",
-        "a Sinistra", "in Alto a Sinistra", "in Alto a Destra"
-    };*/
 
     while (!pq_is_empty(pq)) {
         PQNode current = pq_pop(pq);
@@ -543,7 +434,6 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
                 size_t v_idx = vx * map_rows + vy;
                 if (new_cost < distances[v_idx]) {
                     distances[v_idx] = new_cost;
-                    path_info[v_idx] = (PathInfo){{ux, uy}, 'T', step_cost, i};
                     pq_push(pq, (PQNode){new_cost, vx, vy});
                 }
             }
@@ -557,7 +447,6 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
             size_t dest_idx = route->dest_x * map_rows + route->dest_y;
             if (new_cost < distances[dest_idx]) {
                 distances[dest_idx] = new_cost;
-                path_info[dest_idx] = (PathInfo){{ux, uy}, 'A', step_cost, -1};
                 pq_push(pq, (PQNode){new_cost, route->dest_x, route->dest_y});
             }
         }
@@ -565,42 +454,13 @@ void do_travel_cost(uint16_t xp, uint16_t yp, uint16_t xd, uint16_t yd) {
 
     pq_destroy(pq);
     int64_t final_cost = distances[xd * map_rows + yd];
-
-    // // Stampa di debug (invariata, ma ora userà i dati corretti)
-    // if (final_cost != LLONG_MAX) {
-    //     fprintf(stderr, "\n--- DEBUG: Percorso da (%u, %u) a (%u, %u) con costo finale: %ld ---\n", xp, yp, xd, yd, final_cost);
-    //     Point path_coords[map_size];
-    //     int path_len = 0;
-    //     Point curr = {xd, yd};
-    //     while (curr.x != UINT16_MAX) {
-    //         path_coords[path_len++] = curr;
-    //         curr = path_info[curr.x * map_rows + curr.y].parent;
-    //     }
-    //
-    //     fprintf(stderr, "Partenza da (%u, %u)\t\t| Costo accumulato: 0\n", xp, yp);
-    //     for (int i = path_len - 2; i >= 0; --i) {
-    //         Point p_to = path_coords[i], p_from = path_coords[i+1];
-    //         size_t to_idx = p_to.x * map_rows + p_to.y;
-    //         char move = path_info[to_idx].move_type;
-    //         if (move == 'T') {
-    //             fprintf(stderr, "Mossa via Terra da (%u, %u) a (%u, %u) [%s]\t| Aggiunto: %-3ld | Costo accumulato: %ld\n",
-    //                     p_from.x, p_from.y, p_to.x, p_to.y, direction_names[path_info[to_idx].direction_index], path_info[to_idx].move_cost, distances[to_idx]);
-    //         } else if (move == 'A') {
-    //             fprintf(stderr, "Mossa via Aerea da (%u, %u) a (%u, %u)\t\t| Aggiunto: %-3ld | Costo accumulato: %ld\n",
-    //                     p_from.x, p_from.y, p_to.x, p_to.y, path_info[to_idx].move_cost, distances[to_idx]);
-    //         }
-    //     }
-    //     fprintf(stderr, "--- FINE DEBUG ---\n\n");
-    // }
-
     printf("%ld\n", final_cost == LLONG_MAX ? -1 : final_cost);
 
     // Ricorda di ripristinare la cache
     cache_put(xp, yp, distances);
-    free(path_info);
-    // free(distances) non è più necessario perché la proprietà passa a cache_put
 }
 
+//MAP and CACHE reset function
 void cleanup_resources() {
     if (map) {
         for (uint32_t i = 0; i < map_cols; i++) {
@@ -611,32 +471,48 @@ void cleanup_resources() {
     }
     destroy_cache();
 }
-
 // ============================================================================
 // 5. MAIN FUNCTION (PROGRAM ENTRYPOINT)
 // ============================================================================
-
+//MAIN corretto per evitare il warn_unused_result
 int main() {
     char command[32];
-    while (scanf("%s", command) != EOF) {
+
+    // Il ciclo continua a leggere comandi fino alla fine dell'input (EOF).
+    while (scanf("%s", command) == 1) {
+
         if (strcmp(command, "init") == 0) {
             uint32_t cols, rows;
-            (void)scanf("%u %u", &cols, &rows);
-            do_init(cols, rows);
+            // Controlla che scanf abbia letto correttamente 2 valori.
+            if (scanf("%u %u", &cols, &rows) == 2) {
+                do_init(cols, rows);
+            }
         } else if (strcmp(command, "change_cost") == 0) {
-            uint16_t x, y; int v, r;
-            (void)scanf("%hu %hu %d %d", &x, &y, &v, &r);
-            do_change_cost(x, y, v, r);
+            uint16_t x, y;
+            int v, r;
+            // Controlla che scanf abbia letto correttamente 4 valori.
+            if (scanf("%hu %hu %d %d", &x, &y, &v, &r) == 4) {
+                do_change_cost(x, y, v, r);
+            }
         } else if (strcmp(command, "toggle_air_route") == 0) {
             uint16_t x1, y1, x2, y2;
-            (void)scanf("%hu %hu %hu %hu", &x1, &y1, &x2, &y2);
-            do_toggle_air_route(x1, y1, x2, y2);
+            // Controlla che scanf abbia letto correttamente 4 valori.
+            if (scanf("%hu %hu %hu %hu", &x1, &y1, &x2, &y2) == 4) {
+                do_toggle_air_route(x1, y1, x2, y2);
+            }
         } else if (strcmp(command, "travel_cost") == 0) {
             uint16_t xp, yp, xd, yd;
-            (void)scanf("%hu %hu %hu %hu", &xp, &yp, &xd, &yd);
-            do_travel_cost(xp, yp, xd, yd);
+            // Controlla che scanf abbia letto correttamente 4 valori.
+            if (scanf("%hu %hu %hu %hu", &xp, &yp, &xd, &yd) == 4) {
+                do_travel_cost(xp, yp, xd, yd);
+            }
         }
+        // Se il comando non corrisponde a nessuno di quelli noti o se l'input
+        // per un comando non è corretto, il programma semplicemente ignora la riga
+        // e passa alla successiva, come da comportamento implicito richiesto.
     }
+
+    // Libera tutte le risorse allocate prima di terminare.
     cleanup_resources();
     return 0;
 }
